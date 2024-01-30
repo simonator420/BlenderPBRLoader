@@ -84,9 +84,23 @@ def create_basic_material():
 
     return material
 
+def update_material_selection(self, context):
+    material_list = context.window_manager.reawote_materials
+    for index, material in enumerate(material_list):
+        if material == self:
+            print(f"Checkbox for Material: {material.name}, Index: {index} has been {'checked' if material.selected else 'unchecked'}")
+            full_path = valid_paths[index]
+            for target_folder in os.listdir(full_path):
+                if "PREVIEW" in target_folder:
+                    preview_path = os.path.join(full_path,target_folder)
+                    for preview_file in os.listdir(preview_path):
+                        if "SPHERE" or "FABRIC" in preview_file:
+                            preview_file_path = os.path.join(preview_path,preview_file)
+                            break
+
 class ReawoteMaterialItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Name")
-    selected: bpy.props.BoolProperty(name="Select", default=False)
+    selected: bpy.props.BoolProperty(name="Select", default=False, update=update_material_selection)
 
 # Define a UI List
 class ReawoteMaterialUIList(bpy.types.UIList):
@@ -169,7 +183,12 @@ class LoadMaterialsOperator(bpy.types.Operator):
     bl_description = "Load selected materials from the list view"
 
     def execute(self, context):
-        # Your code here (e.g., loading materials)
+        materials = context.window_manager.reawote_materials
+
+        for index, material in enumerate(materials):
+            if material.selected:
+                print(f"Checked Material: {material.name}, Index: {index}")
+
         return {'FINISHED'}
     
 class SelectAllOperator(bpy.types.Operator):
