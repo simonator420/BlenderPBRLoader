@@ -101,6 +101,7 @@ def update_material_selection(self, context):
 class ReawoteMaterialItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Name")
     selected: bpy.props.BoolProperty(name="Select", default=False, update=update_material_selection)
+    preview_file_path: bpy.props.StringProperty(name="Preview File Path") 
 
 # Define a UI List
 class ReawoteMaterialUIList(bpy.types.UIList):
@@ -276,6 +277,7 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
 
     def draw(self, context):
         wm = context.window_manager
+        wmp = context.window_manager.pmc_props
         layout = self.layout
 
         split = layout.split(factor=0.4)
@@ -312,11 +314,31 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
         button_row.operator("wm.clean_operator", text="Clean")
 
         layout.template_list("ReawoteMaterialUIList", "", wm, "reawote_materials", wm, "reawote_materials_index")
+        
+        row = layout.row(align=False)
+        thumbnail_size = 6 if bpy.app.version >= (2, 80) else 5
+        row.scale_y = 0.5
+        row.template_icon_view(
+            wmp,
+            'thumbnails',
+            show_labels=False,
+            scale=thumbnail_size,
+        )
 
+        global custom_icons
+        icon_id = custom_icons["custom_icon"].icon_id
+        layout.template_icon(icon_id, scale=6)
+        
         layout.label(text="Simonek je borec")
         layout.operator(ReawotePBRLoaderOperator.bl_idname)
 
 def register():
+    global custom_icons
+    custom_icons = bpy.utils.previews.new()
+    script_dir = os.path.dirname(__file__)
+    image_path = os.path.join(script_dir, "testovaci.jpeg")  # Replace with your image path
+    custom_icons.load("custom_icon", image_path, 'IMAGE')
+
     bpy.utils.register_class(ReawotePBRLoaderOperator)
     bpy.utils.register_class(ReawotePBRLoaderPanel)
     bpy.utils.register_class(ReawoteFolderBrowseOperator)
@@ -332,6 +354,8 @@ def register():
     register_properties()
 
 def unregister():
+    global custom_icons
+    bpy.utils.previews.remove(custom_icons)
     bpy.utils.unregister_class(ReawotePBRLoaderOperator)
     bpy.utils.unregister_class(ReawotePBRLoaderPanel)
     bpy.utils.unregister_class(ReawoteFolderBrowseOperator)
