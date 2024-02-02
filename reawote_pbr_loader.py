@@ -3,6 +3,7 @@ import os
 
 valid_paths = [] # all material paths that include target folder
 true_paths = [] # all paths selected through browse or add to queure buttons
+paths_to_load = [] # paths of materials that were selected and are about to be loaded
 target_folders = ["1K", "2K", "3K", "4K", "5K", "6K", "7K", "8K", "9K", "10K", "11K", "12K", "13K", "14K", "15K", "16K"]
 
 def register_properties():
@@ -81,6 +82,32 @@ def create_basic_material():
 
     links = material.node_tree.links
     link = links.new(node_diffuse.outputs["BSDF"], node_output.inputs["Surface"])
+
+    return material
+
+def create_principled_bsdf_material(material_name, material_path):
+    # Create a new material
+    material = bpy.data.materials.new(name=material_name)
+    material.use_nodes = True
+    nodes = material.node_tree.nodes
+
+    # Clear existing nodes
+    for node in nodes:
+        nodes.remove(node)
+
+    # Create Principled BSDF and Material Output nodes
+    bsdf_node = nodes.new('ShaderNodeBsdfPrincipled')
+    bsdf_node.location = (0, 0)
+
+    output_node = nodes.new('ShaderNodeOutputMaterial')
+    output_node.location = (200, 0)
+
+    # Connect Principled BSDF to Material Output
+    links = material.node_tree.links
+    links.new(bsdf_node.outputs['BSDF'], output_node.inputs['Surface'])
+
+    # TODO: Load textures from material_path and connect them to the Principled BSDF node
+    # You will need to add code here to load and connect textures based on your file naming conventions and structure
 
     return material
 
@@ -188,8 +215,72 @@ class LoadMaterialsOperator(bpy.types.Operator):
 
         for index, material in enumerate(materials):
             if material.selected:
+                full_path = valid_paths[index]
+                paths_to_load.append(full_path)
                 print(f"Checked Material: {material.name}, Index: {index}")
+                principled_material = create_principled_bsdf_material(material.name, full_path)
+                if context.object:
+                    # # Check if the material already exists in the slots
+                    # if principled_material.name not in context.object.data.materials:
+                    #     context.object.data.materials.append(principled_material)
+                    # else:
+                    #     # If the material already exists, get its index
+                    #     mat_index = context.object.data.materials.find(principled_material.name)
+                    #     context.object.active_material_index = mat_index
+                    context.object.data.materials.append(principled_material)
+                    for target_folder in os.listdir(full_path):
+                        if target_folder in target_folders:
+                            target_folder_full_path = os.path.join(full_path, target_folder)
+                            for file in os.listdir(target_folder_full_path):
+                                texture_path = bpy.data.images.load(os.path.join(target_folder_full_path, file))
+                                try:
+                                    parts = file.split(".")[0].split("_")
+                                    manufacturer = parts[0]
+                                    product_number = parts[1]
+                                    product = parts[2]
+                                    mapID = parts[3]
+                                    print(f"This is mapID: {mapID}")
+                                    resolution = parts[4]
 
+                                    if mapID == "COL":
+                                        img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
+                                        img_texture_node.image = texture_path
+
+                                        bsdf_node = principled_material.node_tree.nodes.get('Principled BSDF')
+                                        if bsdf_node:
+                                            principled_material.node_tree.links.new(bsdf_node.inputs['Base Color'], img_texture_node.outputs['Color'])
+
+                                    elif mapID == "ROUGH":
+                                        rough_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
+                                        rough_img_texture_node.image = texture_path
+                                        rough_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+
+                                        bsdf_node = principled_material.node_tree.nodes.get('Principled BSDF')
+                                        if bsdf_node:
+                                            principled_material.node_tree.links.new(bsdf_node.inputs['Roughness'], rough_img_texture_node.outputs['Color'])
+
+                                    elif mapID == "NRM":
+                                        normal_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
+                                        normal_img_texture_node.image = texture_path
+                                        normal_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+
+                                        # Create Normal Map Node
+                                        normal_map_node = principled_material.node_tree.nodes.new('ShaderNodeNormalMap')
+
+                                        # Link Image Texture to Normal Map Node
+                                        principled_material.node_tree.links.new(normal_map_node.inputs['Color'], normal_img_texture_node.outputs['Color'])
+
+                                        # Link Normal Map Node to Normal of Principled BSDF
+                                        bsdf_node = principled_material.node_tree.nodes.get('Principled BSDF')
+                                        if bsdf_node:
+                                            principled_material.node_tree.links.new(bsdf_node.inputs['Normal'], normal_map_node.outputs['Normal'])
+
+                                except:
+                                    pass
+
+
+        print(f"These are selected paths: {paths_to_load}")
+        self.report({'INFO'}, "Materials loaded")
         return {'FINISHED'}
     
 class SelectAllOperator(bpy.types.Operator):
