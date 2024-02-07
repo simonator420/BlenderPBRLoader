@@ -332,6 +332,110 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         bsdf_node = principled_material.node_tree.nodes.get('Principled BSDF')
                                         if bsdf_node:
                                             principled_material.node_tree.links.new(bsdf_node.inputs['Normal'], normal_map_node.outputs['Normal'])
+                                    
+                                    elif mapID == "NRM16" and use_16bit_normal_maps:
+                                        normal_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
+                                        normal_img_texture_node.image = texture_path
+                                        normal_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        principled_material.node_tree.links.new(normal_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
+
+                                        # Create Normal Map Node
+                                        normal_map_node = principled_material.node_tree.nodes.new('ShaderNodeNormalMap')
+
+                                        # Link Image Texture to Normal Map Node
+                                        principled_material.node_tree.links.new(normal_map_node.inputs['Color'], normal_img_texture_node.outputs['Color'])
+
+                                        # Link Normal Map Node to Normal of Principled BSDF
+                                        bsdf_node = principled_material.node_tree.nodes.get('Principled BSDF')
+                                        if bsdf_node:
+                                            principled_material.node_tree.links.new(bsdf_node.inputs['Normal'], normal_map_node.outputs['Normal'])
+
+                                    elif mapID == "DISP" and (not use_16bit_displacement_maps or "DISP" not in mapID_list):
+                                        disp_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
+                                        disp_img_texture_node.image = texture_path
+                                        disp_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        principled_material.node_tree.links.new(disp_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
+
+                                        # Create Displacement Node
+                                        displacement_node = principled_material.node_tree.nodes.new('ShaderNodeDisplacement')
+
+                                        # Link Image Texture to Displacement Node
+                                        principled_material.node_tree.links.new(displacement_node.inputs['Height'], disp_img_texture_node.outputs['Color'])
+
+                                        # Find Material Output Node
+                                        material_output_node = principled_material.node_tree.nodes.get('Material Output')
+                                        if material_output_node:
+                                            # Link Displacement Node to Material Output's Displacement
+                                            principled_material.node_tree.links.new(material_output_node.inputs['Displacement'], displacement_node.outputs['Displacement'])
+
+                                    elif mapID == "DISP16" and use_16bit_displacement_maps:
+                                        disp_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
+                                        disp_img_texture_node.image = texture_path
+                                        disp_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        principled_material.node_tree.links.new(disp_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
+                                        # Create Displacement Node
+                                        displacement_node = principled_material.node_tree.nodes.new('ShaderNodeDisplacement')
+
+                                        # Link Image Texture to Displacement Node
+                                        principled_material.node_tree.links.new(displacement_node.inputs['Height'], disp_img_texture_node.outputs['Color'])
+
+                                        # Find Material Output Node
+                                        material_output_node = principled_material.node_tree.nodes.get('Material Output')
+                                        if material_output_node:
+                                            # Link Displacement Node to Material Output's Displacement
+                                            principled_material.node_tree.links.new(material_output_node.inputs['Displacement'], displacement_node.outputs['Displacement'])
+
+                                    elif mapID == "METAL":
+                                        metal_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
+                                        metal_img_texture_node.image = texture_path
+                                        metal_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        principled_material.node_tree.links.new(metal_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
+
+                                        # Link Image Texture to Metallic of Principled BSDF
+                                        bsdf_node = principled_material.node_tree.nodes.get('Principled BSDF')
+                                        if bsdf_node:
+                                            principled_material.node_tree.links.new(bsdf_node.inputs['Metallic'], metal_img_texture_node.outputs['Color'])
+
+                                    elif mapID == "OPAC":
+                                        opac_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
+                                        opac_img_texture_node.image = texture_path
+                                        opac_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        principled_material.node_tree.links.new(opac_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
+
+                                        # Link Image Texture to Alpha of Principled BSDF
+                                        bsdf_node = principled_material.node_tree.nodes.get('Principled BSDF')
+                                        if bsdf_node:
+                                            principled_material.node_tree.links.new(bsdf_node.inputs['Alpha'], opac_img_texture_node.outputs['Color'])
+
+                                        # Set material settings for Blend and Shadow mode
+                                        principled_material.blend_method = 'CLIP'
+                                        principled_material.shadow_method = 'CLIP'
+                                    
+                                    elif mapID == "SSS":
+                                        sss_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
+                                        sss_img_texture_node.image = texture_path
+                                        principled_material.node_tree.links.new(sss_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
+
+                                        # Link Image Texture to Subsurface Color of Principled BSDF
+                                        bsdf_node = principled_material.node_tree.nodes.get('Principled BSDF')
+                                        if bsdf_node:
+                                            
+                                            principled_material.node_tree.links.new(bsdf_node.inputs['Subsurface Weight'], sss_img_texture_node.outputs['Color'])
+                                            bsdf_node.subsurface_method = 'BURLEY'
+
+                                            principled_material.node_tree.links.new(bsdf_node.inputs['Subsurface Color'], sss_img_texture_node.outputs['Color'])
+                                        
+
+                                    elif mapID == "SHEEN":
+                                        sheen_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
+                                        sheen_img_texture_node.image = texture_path
+                                        sheen_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        principled_material.node_tree.links.new(sheen_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
+
+                                        # Link Image Texture to Sheen of Principled BSDF
+                                        bsdf_node = principled_material.node_tree.nodes.get('Principled BSDF')
+                                        if bsdf_node:
+                                            principled_material.node_tree.links.new(bsdf_node.inputs['Sheen Weight'], sheen_img_texture_node.outputs['Color'])
 
                                 except:
                                     pass
