@@ -6,6 +6,11 @@ true_paths = [] # all paths selected through browse or add to queure buttons
 paths_to_load = [] # paths of materials that were selected and are about to be loaded
 target_folders = ["1K", "2K", "3K", "4K", "5K", "6K", "7K", "8K", "9K", "10K", "11K", "12K", "13K", "14K", "15K", "16K"]
 
+global custom_icons
+custom_icons = None
+
+
+
 def register_properties():
     bpy.types.WindowManager.selected_folder_path = bpy.props.StringProperty(
         name="Folder Path",
@@ -120,8 +125,17 @@ def get_mapID(self, files):
         # print(f"This is mapID_list for {file} : {mapID_list}")
     return mapID_list
 
+def load_preview_image(material_name, preview_file_path):
+    global custom_icons
+    if material_name not in custom_icons:
+        if os.path.exists(preview_file_path):
+            custom_icons.load(material_name, preview_file_path, 'IMAGE')
+        else:
+            print(f"Preview image path does not exist: {preview_file_path}")
+
 def update_material_selection(self, context):
     material_list = context.window_manager.reawote_materials
+    global custom_icons
     for index, material in enumerate(material_list):
         if material == self:
             print(f"Checkbox for Material: {material.name}, Index: {index} has been {'checked' if material.selected else 'unchecked'}")
@@ -132,6 +146,10 @@ def update_material_selection(self, context):
                     for preview_file in os.listdir(preview_path):
                         if "SPHERE" or "FABRIC" in preview_file:
                             preview_file_path = os.path.join(preview_path,preview_file)
+                            load_preview_image(material.name, preview_file_path)
+                            print(f"Tohle jsou custom_icons: {custom_icons}")
+                            if context.area:
+                                context.area.tag_redraw()
                             break
 
 class ReawoteMaterialItem(bpy.types.PropertyGroup):
@@ -254,6 +272,34 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                 print(f"Tohle je ta moje full_path: {target_folder_full_path}")
                                 print(" ")
                                 texture_path = bpy.data.images.load(os.path.join(target_folder_full_path, file))
+
+                                mapping = bpy.context.window_manager.mapping_type
+                                
+                                include_ao_maps = bpy.context.window_manager.include_ao_maps
+                                include_displacement_maps = bpy.context.window_manager.include_displacement_maps
+                                use_16bit_displacement_maps = bpy.context.window_manager.use_16bit_displacement_maps
+                                use_16bit_normal_maps = bpy.context.window_manager.use_16bit_normal_maps
+                                conform_maps = bpy.context.window_manager.conform_maps
+                                
+                                if conform_maps:
+                                    print(f"Conform je true a tohle je texure_path: {texture_path}")
+                                    print(f"A tohle je mapping: {mapping}")
+                                    if texture_path.size[0] > 0 and texture_path.size[1] > 0:
+                                        aspect_ratio = texture_path.size[0] / texture_path.size[1]
+
+                                        if mapping in ('REAWOTE_DEFAULT', 'MOSAIC_DETILING'):
+                                            print("if mapping in")
+                                            mapping_node.inputs['Scale'].default_value = (1.0 / aspect_ratio, 1.0, 1.0)
+                                        else:
+                                            if hasattr(mapping_node, 'scale'):
+                                                print("if hassattr")
+                                                mapping_node.scale[0] = 1/aspect_ratio
+                                            else:
+                                                print("else")
+                                                mapping_node.inputs['Scale'].default_value[0] = 1/aspect_ratio
+
+                                        # mapping_node.inputs['Scale'].default_value[0] = 1.0 / aspect_ratio
+                                        # mapping_node.inputs['Scale'].default_value[1] = 1.0
                                 try:
                                     parts = file.split(".")[0].split("_")
                                     manufacturer = parts[0]
@@ -262,12 +308,6 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                     mapID = parts[3]
                                     print(f"This is mapID: {mapID}")
                                     resolution = parts[4]
-
-                                    include_ao_maps = bpy.context.window_manager.include_ao_maps
-                                    include_displacement_maps = bpy.context.window_manager.include_displacement_maps
-                                    use_16bit_displacement_maps = bpy.context.window_manager.use_16bit_displacement_maps
-                                    use_16bit_normal_maps = bpy.context.window_manager.use_16bit_normal_maps
-                                    conform_maps = bpy.context.window_manager.conform_maps
 
                                     if mapID == "COL":
                                         img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
@@ -350,7 +390,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         if bsdf_node:
                                             principled_material.node_tree.links.new(bsdf_node.inputs['Normal'], normal_map_node.outputs['Normal'])
 
-                                    elif mapID == "DISP" and (not use_16bit_displacement_maps or "DISP" not in mapID_list):
+                                    elif mapID == "DISP" and include_displacement_maps and (not use_16bit_displacement_maps or "DISP" not in mapID_list):
                                         disp_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         disp_img_texture_node.image = texture_path
                                         disp_img_texture_node.image.colorspace_settings.name = 'Non-Color'
@@ -368,7 +408,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                             # Link Displacement Node to Material Output's Displacement
                                             principled_material.node_tree.links.new(material_output_node.inputs['Displacement'], displacement_node.outputs['Displacement'])
 
-                                    elif mapID == "DISP16" and use_16bit_displacement_maps:
+                                    elif mapID == "DISP16" and use_16bit_displacement_maps and include_displacement_maps:
                                         disp_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         disp_img_texture_node.image = texture_path
                                         disp_img_texture_node.image.colorspace_settings.name = 'Non-Color'
@@ -578,9 +618,11 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
             scale=thumbnail_size,
         )
 
-        global custom_icons
-        icon_id = custom_icons["custom_icon"].icon_id
-        layout.template_icon(icon_id, scale=6)
+        material_list = wm.reawote_materials
+        if material_list:
+            selected_material = material_list[wm.reawote_materials_index]
+            if selected_material and selected_material.name in custom_icons:
+                layout.template_icon(icon_value=custom_icons[selected_material.name].icon_id, scale=6)
         
         layout.label(text="Simonek je borec")
         layout.operator(ReawotePBRLoaderOperator.bl_idname)
@@ -588,9 +630,9 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
 def register():
     global custom_icons
     custom_icons = bpy.utils.previews.new()
-    script_dir = os.path.dirname(__file__)
-    image_path = os.path.join(script_dir, "testovaci.jpeg")  # Replace with your image path
-    custom_icons.load("custom_icon", image_path, 'IMAGE')
+    # script_dir = os.path.dirname(__file__)
+    # image_path = os.path.join(script_dir, "testovaci.jpeg")  # Replace with your image path
+    # custom_icons.load("custom_icon", image_path, 'IMAGE')
 
     bpy.utils.register_class(ReawotePBRLoaderOperator)
     bpy.utils.register_class(ReawotePBRLoaderPanel)
@@ -609,6 +651,7 @@ def register():
 def unregister():
     global custom_icons
     bpy.utils.previews.remove(custom_icons)
+    custom_icons = None
     bpy.utils.unregister_class(ReawotePBRLoaderOperator)
     bpy.utils.unregister_class(ReawotePBRLoaderPanel)
     bpy.utils.unregister_class(ReawoteFolderBrowseOperator)
