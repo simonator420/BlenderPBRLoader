@@ -4,6 +4,7 @@ import os
 valid_paths = [] # all material paths that include target folder
 true_paths = [] # all paths selected through browse or add to queure buttons
 paths_to_load = [] # paths of materials that were selected and are about to be loaded
+preview_paths = []
 target_folders = ["1K", "2K", "3K", "4K", "5K", "6K", "7K", "8K", "9K", "10K", "11K", "12K", "13K", "14K", "15K", "16K"]
 
 global custom_icons
@@ -17,6 +18,9 @@ def register_properties():
         subtype='DIR_PATH',
         default=""
     )
+
+    bpy.types.WindowManager.reawote_materials_index = bpy.props.IntProperty(update=print_selected_material_name)
+
 
     bpy.types.WindowManager.mapping_type = bpy.props.EnumProperty(
         name="Mapping Type",
@@ -126,25 +130,38 @@ def get_mapID(self, files):
     return mapID_list
 
 def load_preview_image(material_name, preview_file_path):
-    global custom_icons
+    # global custom_icons
     if material_name not in custom_icons:
         if os.path.exists(preview_file_path):
             custom_icons.load(material_name, preview_file_path, 'IMAGE')
         else:
             print(f"Preview image path does not exist: {preview_file_path}")
 
+def print_selected_material_name(self, context):
+    idx = context.window_manager.reawote_materials_index
+    if idx >= 0 and idx < len(context.window_manager.reawote_materials):
+        material_name = context.window_manager.reawote_materials[idx].name
+        preview_path = preview_paths[idx]
+        try:
+            res = [i for i in preview_paths if i.split('\\')[-3] == material_name]
+            print('success')
+            load_preview_image(material_name, res[0])
+        except:
+            print(f"Tento material nema preview {material_name}")
+        if context.area:
+            context.area.tag_redraw()
+
 def update_material_selection(self, context):
     material_list = context.window_manager.reawote_materials
-    global custom_icons
     for index, material in enumerate(material_list):
-        if material == self:
+        if material == self and material.selected:
             print(f"Checkbox for Material: {material.name}, Index: {index} has been {'checked' if material.selected else 'unchecked'}")
             full_path = valid_paths[index]
             for target_folder in os.listdir(full_path):
                 if "PREVIEW" in target_folder:
                     preview_path = os.path.join(full_path,target_folder)
                     for preview_file in os.listdir(preview_path):
-                        if "SPHERE" or "FABRIC" in preview_file:
+                        if "SPHERE" in preview_file or "FABRIC" in preview_file:
                             preview_file_path = os.path.join(preview_path,preview_file)
                             load_preview_image(material.name, preview_file_path)
                             print(f"Tohle jsou custom_icons: {custom_icons}")
@@ -163,18 +180,6 @@ class ReawoteMaterialUIList(bpy.types.UIList):
         row = layout.row()
         row.prop(item, "selected", text="")
         row.label(text=item.name)
-
-# creates and applies the basic material to the active object
-class ReawotePBRLoaderOperator(bpy.types.Operator):
-    bl_idname = "material.reawote_pbr_loader_operator"
-    bl_label = "Load Basic Material"
-
-    def execute(self, context):
-        material = create_basic_material()
-        if context.object:
-            context.object.active_material = material
-        self.report({'INFO'}, "Basic Material Loaded")
-        return {'FINISHED'}
     
 class ReawoteFolderBrowseOperator(bpy.types.Operator):
     bl_idname = "material.reawote_folder_browse_operator"
@@ -222,15 +227,23 @@ class ReawoteFolderBrowseOperator(bpy.types.Operator):
                         item = material_list.add()
                         item.name = file_name
                         valid_paths.append(full_path)
-                        print("-----------")
-                        print(f"This is target_folder_full_path: {target_folder_full_path}")
-                        print("-----------")
                         if added_true == False:
                             true_paths.append(folder_path)
                             added_true = True
 
+                    elif "PREVIEW" in target_folder:
+                        preview_path = os.path.join(full_path, target_folder)
+                        for preview_file in os.listdir(preview_path):
+                            if "SPHERE" in preview_file or "FABRIC" in preview_file:
+                                preview_file_path = os.path.join(preview_path, preview_file)
+                                print(f"Pridavam tento preview_file: {preview_file_path}")
+                                preview_paths.append(preview_file_path)
+                                break
+
             else:
                 print(f"{file_name} is not a directory")
+        
+        print(f"Tohle jsou preview paths: {preview_paths}")
 
 class LoadMaterialsOperator(bpy.types.Operator):
     bl_idname = "wm.load_materials_operator"
@@ -522,11 +535,6 @@ class RefreshOperator(bpy.types.Operator):
                             item = material_list.add()
                             item.name = file_name
                             valid_paths.append(full_path)
-                            print("-----------")
-                            print(f"This is target_folder_full_path: {target_folder_full_path}")
-                            print("-----------")
-        print(" ")
-        print(f"New valid_paths: {valid_paths}")
         return {'FINISHED'}
 
 class AddToQueueOperator(bpy.types.Operator):
@@ -608,24 +616,22 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
 
         layout.template_list("ReawoteMaterialUIList", "", wm, "reawote_materials", wm, "reawote_materials_index")
         
-        row = layout.row(align=False)
-        thumbnail_size = 6 if bpy.app.version >= (2, 80) else 5
-        row.scale_y = 0.5
-        row.template_icon_view(
-            wmp,
-            'thumbnails',
-            show_labels=False,
-            scale=thumbnail_size,
-        )
+        # row = layout.row(align=False)
+        # thumbnail_size = 6 if bpy.app.version >= (2, 80) else 5
+        # row.scale_y = 0.5
+        # row.template_icon_view(
+        #     wmp,
+        #     'thumbnails',
+        #     show_labels=False,
+        #     scale=thumbnail_size,
+        # )
 
         material_list = wm.reawote_materials
         if material_list:
             selected_material = material_list[wm.reawote_materials_index]
             if selected_material and selected_material.name in custom_icons:
-                layout.template_icon(icon_value=custom_icons[selected_material.name].icon_id, scale=6)
-        
-        layout.label(text="Simonek je borec")
-        layout.operator(ReawotePBRLoaderOperator.bl_idname)
+                layout.template_icon(icon_value=custom_icons[selected_material.name].icon_id, scale=5)
+                layout.label(text=selected_material.name)
 
 def register():
     global custom_icons
@@ -634,7 +640,6 @@ def register():
     # image_path = os.path.join(script_dir, "testovaci.jpeg")  # Replace with your image path
     # custom_icons.load("custom_icon", image_path, 'IMAGE')
 
-    bpy.utils.register_class(ReawotePBRLoaderOperator)
     bpy.utils.register_class(ReawotePBRLoaderPanel)
     bpy.utils.register_class(ReawoteFolderBrowseOperator)
     bpy.utils.register_class(SelectAllOperator)
@@ -652,7 +657,6 @@ def unregister():
     global custom_icons
     bpy.utils.previews.remove(custom_icons)
     custom_icons = None
-    bpy.utils.unregister_class(ReawotePBRLoaderOperator)
     bpy.utils.unregister_class(ReawotePBRLoaderPanel)
     bpy.utils.unregister_class(ReawoteFolderBrowseOperator)
     bpy.utils.unregister_class(SelectAllOperator)
