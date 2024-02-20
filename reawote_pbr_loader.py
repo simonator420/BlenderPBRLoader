@@ -1,10 +1,13 @@
 import bpy
 import os
 
+import bpy.utils.previews
+
+
 valid_paths = [] # all material paths that include target folder
-true_paths = [] # all paths selected through browse or add to queure buttons
+true_paths = [] # all paths selected through browse or add to queue buttons
 paths_to_load = [] # paths of materials that were selected and are about to be loaded
-preview_paths = []
+preview_paths = [] # paths of all the materials that include preview folder
 target_folders = ["1K", "2K", "3K", "4K", "5K", "6K", "7K", "8K", "9K", "10K", "11K", "12K", "13K", "14K", "15K", "16K"]
 
 global custom_icons
@@ -26,11 +29,11 @@ def register_properties():
         name="Mapping Type",
         description="Choose the mapping type",
         items=[
-            ('REAWOTE_DEFAULT', "Reawote Default - UV", ""),
-            ('MOSAIC_DETILING', "Mosaic De-tiling - UV", ""),
-            ('BLENDER_ORIGINAL', "Blender Original - UV", ""),
-            ('BOX_MAPPING_GEN', "Box Mapping - Generated", ""),
-            ('BOX_MAPPING_OBJ', "Box Mapping - Object", "")
+            #('REAWOTE_DEFAULT', "Reawote Default - UV", ""),
+            #('MOSAIC_DETILING', "Mosaic De-tiling - UV", ""),
+            ('blender_original', "Blender Original - UV", ""),
+            ('box_generated', "Box Mapping - Generated", ""),
+            ('box_object', "Box Mapping - Object", "")
         ]
     )
 
@@ -123,10 +126,14 @@ def create_principled_bsdf_material(material_name, material_path):
 def get_mapID(self, files):
     mapID_list = []
     for file in os.listdir(files):
-        parts = file.split(".")[0].split("_")
-        mapID = parts[3]
-        mapID_list.append(mapID)
-        # print(f"This is mapID_list for {file} : {mapID_list}")
+        if file[0].isalpha():
+            parts = file.split(".")[0].split("_")
+            print(f"Tohle jsou parts {parts} pro tento file {file}")
+            mapID = parts[3]
+            mapID_list.append(mapID)
+            # print(f"This is mapID_list for {file} : {mapID_list}")
+        else:
+            continue
     return mapID_list
 
 def load_preview_image(material_name, preview_file_path):
@@ -169,6 +176,15 @@ def update_material_selection(self, context):
                                 context.area.tag_redraw()
                             break
 
+# workaround for macOS to display material preview
+def initialize_materials(self, materials):
+    for material in materials:
+        material.selected = True
+    
+    for material in materials:
+        material.selected = False
+
+
 class ReawoteMaterialItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Name")
     selected: bpy.props.BoolProperty(name="Select", default=False, update=update_material_selection)
@@ -199,6 +215,16 @@ class ReawoteFolderBrowseOperator(bpy.types.Operator):
                         context.window_manager.selected_folder_path = self.filepath
                         self.populate_material_list(context, self.filepath, clear_list=True)
                         context.window_manager.is_folder_selected = True
+                        materials = context.window_manager.reawote_materials
+                        
+                        initialize_materials(self,materials)
+
+                        context.window_manager.include_ao_maps = True
+                        context.window_manager.include_displacement_maps = True
+                        context.window_manager.use_16bit_displacement_maps = True
+                        context.window_manager.use_16bit_normal_maps = True
+                        context.window_manager.conform_maps = True
+
                         return {'FINISHED'}
         self.report({'WARNING'}, "No Reawote materials were found in selected path")
         return {'CANCELLED'}
@@ -250,8 +276,15 @@ class LoadMaterialsOperator(bpy.types.Operator):
     bl_label = "Load Materials"
     bl_description = "Load selected materials from the list view"
 
+    def set_projection(self, mapping, node):
+        if mapping in ('box_generated', 'box_object'):
+            node.projection = 'BOX'
+            node.projection_blend = 0.3
+
     def execute(self, context):
         materials = context.window_manager.reawote_materials
+        mapping = context.window_manager.mapping_type
+        print(f"Tohle je mapping {mapping}")
 
         for index, material in enumerate(materials):
             if material.selected:
@@ -278,7 +311,14 @@ class LoadMaterialsOperator(bpy.types.Operator):
                             tex_coord_node = principled_material.node_tree.nodes.new('ShaderNodeTexCoord')
                             mapping_node = principled_material.node_tree.nodes.new('ShaderNodeMapping')
 
-                            principled_material.node_tree.links.new(mapping_node.inputs['Vector'], tex_coord_node.outputs['UV'])
+                            if mapping == "blender_original":
+                                principled_material.node_tree.links.new(mapping_node.inputs['Vector'], tex_coord_node.outputs['UV'])
+
+                            elif mapping == "box_generated":
+                                principled_material.node_tree.links.new(mapping_node.inputs['Vector'], tex_coord_node.outputs['Generated'])
+
+                            elif mapping == "box_object":
+                                principled_material.node_tree.links.new(mapping_node.inputs['Vector'], tex_coord_node.outputs['Object'])
 
                             for file in os.listdir(target_folder_full_path):
                                 print(" ")
@@ -325,6 +365,8 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                     if mapID == "COL":
                                         img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         img_texture_node.image = texture_path
+                                        self.set_projection(mapping,img_texture_node)
+
                                         principled_material.node_tree.links.new(img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
                                         if not include_ao_maps or "AO" not in mapID_list:
@@ -346,6 +388,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                     elif mapID == "AO" and include_ao_maps:
                                         ao_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         ao_img_texture_node.image = texture_path
+                                        self.set_projection(mapping, ao_img_texture_node)
                                         principled_material.node_tree.links.new(ao_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
                                         if not mix_rgb_node:
@@ -363,6 +406,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         rough_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         rough_img_texture_node.image = texture_path
                                         rough_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        self.set_projection(mapping, rough_img_texture_node)
                                         principled_material.node_tree.links.new(rough_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
                                         bsdf_node = principled_material.node_tree.nodes.get('Principled BSDF')
@@ -373,6 +417,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         normal_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         normal_img_texture_node.image = texture_path
                                         normal_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        self.set_projection(mapping, normal_img_texture_node)
                                         principled_material.node_tree.links.new(normal_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
                                         # Create Normal Map Node
@@ -390,6 +435,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         normal_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         normal_img_texture_node.image = texture_path
                                         normal_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        self.set_projection(mapping, normal_img_texture_node)
                                         principled_material.node_tree.links.new(normal_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
                                         # Create Normal Map Node
@@ -407,6 +453,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         disp_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         disp_img_texture_node.image = texture_path
                                         disp_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        self.set_projection(mapping, disp_img_texture_node)
                                         principled_material.node_tree.links.new(disp_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
                                         # Create Displacement Node
@@ -425,6 +472,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         disp_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         disp_img_texture_node.image = texture_path
                                         disp_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        self.set_projection(mapping, disp_img_texture_node)
                                         principled_material.node_tree.links.new(disp_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
                                         # Create Displacement Node
                                         displacement_node = principled_material.node_tree.nodes.new('ShaderNodeDisplacement')
@@ -442,6 +490,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         metal_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         metal_img_texture_node.image = texture_path
                                         metal_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        self.set_projection(mapping, metal_img_texture_node)
                                         principled_material.node_tree.links.new(metal_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
                                         # Link Image Texture to Metallic of Principled BSDF
@@ -453,6 +502,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         opac_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         opac_img_texture_node.image = texture_path
                                         opac_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        self.set_projection(mapping, opac_img_texture_node)
                                         principled_material.node_tree.links.new(opac_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
                                         # Link Image Texture to Alpha of Principled BSDF
@@ -467,6 +517,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                     elif mapID == "SSS":
                                         sss_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         sss_img_texture_node.image = texture_path
+                                        self.set_projection(mapping, sss_img_texture_node)
                                         principled_material.node_tree.links.new(sss_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
                                         # Link Image Texture to Subsurface Color of Principled BSDF
@@ -483,6 +534,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         sheen_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         sheen_img_texture_node.image = texture_path
                                         sheen_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        self.set_projection(mapping, sheen_img_texture_node)
                                         principled_material.node_tree.links.new(sheen_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
                                         # Link Image Texture to Sheen of Principled BSDF
@@ -523,6 +575,7 @@ class RefreshOperator(bpy.types.Operator):
         material_list = context.window_manager.reawote_materials
         material_list.clear()
         valid_paths.clear()
+        preview_paths.clear()
         for true_path in true_paths:
 
             for file_name in os.listdir(true_path):
@@ -535,6 +588,18 @@ class RefreshOperator(bpy.types.Operator):
                             item = material_list.add()
                             item.name = file_name
                             valid_paths.append(full_path)
+                        
+                        elif "PREVIEW" in target_folder:
+                            preview_path = os.path.join(full_path, target_folder)
+                            for preview_file in os.listdir(preview_path):
+                                if "SPHERE" in preview_file or "FABRIC" in preview_file:
+                                    preview_file_path = os.path.join(preview_path, preview_file)
+                                    print(f"Pridavam tento preview_file: {preview_file_path}")
+                                    preview_paths.append(preview_file_path)
+                                    break
+
+                    initialize_materials(self,material_list)
+
         return {'FINISHED'}
 
 class AddToQueueOperator(bpy.types.Operator):
@@ -578,7 +643,6 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
 
     def draw(self, context):
         wm = context.window_manager
-        wmp = context.window_manager.pmc_props
         layout = self.layout
 
         split = layout.split(factor=0.4)
