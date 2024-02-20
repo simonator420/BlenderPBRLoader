@@ -251,7 +251,8 @@ class ReawoteFolderBrowseOperator(bpy.types.Operator):
                     if target_folder in target_folders:
                         target_folder_full_path = os.path.join(full_path, target_folder)
                         item = material_list.add()
-                        item.name = file_name
+                        parts = file_name.split('_')
+                        item.name = '_'.join(parts[:3])
                         valid_paths.append(full_path)
                         if added_true == False:
                             true_paths.append(folder_path)
@@ -284,14 +285,26 @@ class LoadMaterialsOperator(bpy.types.Operator):
     def execute(self, context):
         materials = context.window_manager.reawote_materials
         mapping = context.window_manager.mapping_type
+
+        start_x, start_y = -300, 0
+        offset_x, offset_y = 300, -300
+        current_x, current_y = start_x, start_y
+
         print(f"Tohle je mapping {mapping}")
 
         for index, material in enumerate(materials):
             if material.selected:
+                current_x = start_x
+                current_y += offset_y
                 full_path = valid_paths[index]
                 paths_to_load.append(full_path)
                 print(f"Checked Material: {material.name}, Index: {index}")
                 principled_material = create_principled_bsdf_material(material.name, full_path)
+                nodes = principled_material.node_tree.nodes
+                material_node =  nodes.get('Principled BSDF')
+                material_node.location = (start_x + 2*offset_x, current_y)
+                output_node = nodes.get('Material Output')
+                output_node.location = (start_x + 3*offset_x, current_y)
                 if context.object:
                     # # Check if the material already exists in the slots
                     # if principled_material.name not in context.object.data.materials:
@@ -309,7 +322,9 @@ class LoadMaterialsOperator(bpy.types.Operator):
                             mix_rgb_node = None
 
                             tex_coord_node = principled_material.node_tree.nodes.new('ShaderNodeTexCoord')
+                            tex_coord_node.location = (start_x - offset_x - offset_x, current_y)
                             mapping_node = principled_material.node_tree.nodes.new('ShaderNodeMapping')
+                            mapping_node.location = (start_x - offset_x, current_y)
 
                             if mapping == "blender_original":
                                 principled_material.node_tree.links.new(mapping_node.inputs['Vector'], tex_coord_node.outputs['UV'])
@@ -327,6 +342,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                 texture_path = bpy.data.images.load(os.path.join(target_folder_full_path, file))
 
                                 mapping = bpy.context.window_manager.mapping_type
+
                                 
                                 include_ao_maps = bpy.context.window_manager.include_ao_maps
                                 include_displacement_maps = bpy.context.window_manager.include_displacement_maps
@@ -365,6 +381,9 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                     if mapID == "COL":
                                         img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         img_texture_node.image = texture_path
+                                        img_texture_node.location = (current_x, current_y)
+                                        color_node_y = current_y
+                                        current_y += offset_y
                                         self.set_projection(mapping,img_texture_node)
 
                                         principled_material.node_tree.links.new(img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
@@ -378,6 +397,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                             if not mix_rgb_node:
                                                 mix_rgb_node = principled_material.node_tree.nodes.new('ShaderNodeMixRGB')
                                                 mix_rgb_node.blend_type = 'MULTIPLY'
+                                                mix_rgb_node.location = (current_x + offset_x, color_node_y)
                                                 bsdf_node = principled_material.node_tree.nodes.get('Principled BSDF')
                                                 if bsdf_node:
                                                     principled_material.node_tree.links.new(bsdf_node.inputs['Base Color'], mix_rgb_node.outputs['Color'])
@@ -388,12 +408,16 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                     elif mapID == "AO" and include_ao_maps:
                                         ao_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         ao_img_texture_node.image = texture_path
+                                        ao_img_texture_node.location = (current_x, current_y)
+                                        ao_node_y = current_y
+                                        current_y += offset_y
                                         self.set_projection(mapping, ao_img_texture_node)
                                         principled_material.node_tree.links.new(ao_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
                                         if not mix_rgb_node:
                                             mix_rgb_node = principled_material.node_tree.nodes.new('ShaderNodeMixRGB')
                                             mix_rgb_node.blend_type = 'MULTIPLY'
+                                            mix_rgb_node.location = (current_x + offset_x, ao_node_y)
                                             bsdf_node = principled_material.node_tree.nodes.get('Principled BSDF')
                                             if bsdf_node:
                                                 principled_material.node_tree.links.new(bsdf_node.inputs['Base Color'], mix_rgb_node.outputs['Color'])
@@ -406,6 +430,8 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         rough_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         rough_img_texture_node.image = texture_path
                                         rough_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        rough_img_texture_node.location = (current_x, current_y)
+                                        current_y += offset_y
                                         self.set_projection(mapping, rough_img_texture_node)
                                         principled_material.node_tree.links.new(rough_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
@@ -417,11 +443,14 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         normal_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         normal_img_texture_node.image = texture_path
                                         normal_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        normal_img_texture_node.location = (current_x, current_y)
                                         self.set_projection(mapping, normal_img_texture_node)
                                         principled_material.node_tree.links.new(normal_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
                                         # Create Normal Map Node
                                         normal_map_node = principled_material.node_tree.nodes.new('ShaderNodeNormalMap')
+                                        normal_map_node.location = (current_x + offset_x, current_y)
+                                        current_y += offset_y
 
                                         # Link Image Texture to Normal Map Node
                                         principled_material.node_tree.links.new(normal_map_node.inputs['Color'], normal_img_texture_node.outputs['Color'])
@@ -435,11 +464,14 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         normal_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         normal_img_texture_node.image = texture_path
                                         normal_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        normal_img_texture_node.location = (current_x, current_y)
                                         self.set_projection(mapping, normal_img_texture_node)
                                         principled_material.node_tree.links.new(normal_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
                                         # Create Normal Map Node
                                         normal_map_node = principled_material.node_tree.nodes.new('ShaderNodeNormalMap')
+                                        normal_map_node.location = (current_x + offset_x, current_y)
+                                        current_y += offset_y
 
                                         # Link Image Texture to Normal Map Node
                                         principled_material.node_tree.links.new(normal_map_node.inputs['Color'], normal_img_texture_node.outputs['Color'])
@@ -453,12 +485,15 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         disp_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         disp_img_texture_node.image = texture_path
                                         disp_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        disp_img_texture_node.location = (current_x, current_y)
+                                        
                                         self.set_projection(mapping, disp_img_texture_node)
                                         principled_material.node_tree.links.new(disp_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
                                         # Create Displacement Node
                                         displacement_node = principled_material.node_tree.nodes.new('ShaderNodeDisplacement')
-
+                                        displacement_node.location = (current_x + offset_x, current_y)
+                                        current_y += offset_y
                                         # Link Image Texture to Displacement Node
                                         principled_material.node_tree.links.new(displacement_node.inputs['Height'], disp_img_texture_node.outputs['Color'])
 
@@ -472,10 +507,13 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         disp_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         disp_img_texture_node.image = texture_path
                                         disp_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        disp_img_texture_node.location = (current_x, current_y)
                                         self.set_projection(mapping, disp_img_texture_node)
                                         principled_material.node_tree.links.new(disp_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
                                         # Create Displacement Node
                                         displacement_node = principled_material.node_tree.nodes.new('ShaderNodeDisplacement')
+                                        displacement_node.location = (current_x + offset_x, current_y)
+                                        current_y += offset_y
 
                                         # Link Image Texture to Displacement Node
                                         principled_material.node_tree.links.new(displacement_node.inputs['Height'], disp_img_texture_node.outputs['Color'])
@@ -490,6 +528,8 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         metal_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         metal_img_texture_node.image = texture_path
                                         metal_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        metal_img_texture_node.location = (current_x, current_y)
+                                        current_y += offset_y
                                         self.set_projection(mapping, metal_img_texture_node)
                                         principled_material.node_tree.links.new(metal_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
@@ -502,6 +542,8 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         opac_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         opac_img_texture_node.image = texture_path
                                         opac_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        opac_img_texture_node.location = (current_x, current_y)
+                                        current_y += offset_y
                                         self.set_projection(mapping, opac_img_texture_node)
                                         principled_material.node_tree.links.new(opac_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
@@ -517,6 +559,8 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                     elif mapID == "SSS":
                                         sss_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         sss_img_texture_node.image = texture_path
+                                        sss_img_texture_node.location = (current_x, current_y)
+                                        current_y += offset_y
                                         self.set_projection(mapping, sss_img_texture_node)
                                         principled_material.node_tree.links.new(sss_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
@@ -534,6 +578,8 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                         sheen_img_texture_node = principled_material.node_tree.nodes.new('ShaderNodeTexImage')
                                         sheen_img_texture_node.image = texture_path
                                         sheen_img_texture_node.image.colorspace_settings.name = 'Non-Color'
+                                        sheen_img_texture_node.location = (current_x, current_y)
+                                        current_y += offset_y
                                         self.set_projection(mapping, sheen_img_texture_node)
                                         principled_material.node_tree.links.new(sheen_img_texture_node.inputs['Vector'], mapping_node.outputs['Vector'])
 
@@ -629,8 +675,17 @@ class CleanOperator(bpy.types.Operator):
         material_list.clear()
         valid_paths.clear()
         true_paths.clear()
+        preview_paths.clear()
+
         context.window_manager.selected_folder_path = ""
         context.window_manager.is_folder_selected = False
+
+        context.window_manager.include_ao_maps = False
+        context.window_manager.include_displacement_maps = False
+        context.window_manager.use_16bit_displacement_maps = False
+        context.window_manager.use_16bit_normal_maps = False
+        context.window_manager.conform_maps = False
+
         return {'FINISHED'}
 
 # defines a UI panel for the add-on
