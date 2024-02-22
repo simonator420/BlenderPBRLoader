@@ -8,6 +8,7 @@ valid_paths = [] # all material paths that include target folder
 true_paths = [] # all paths selected through browse or add to queue buttons
 paths_to_load = [] # paths of materials that were selected and are about to be loaded
 preview_paths = [] # paths of all the materials that include preview folder
+file_names = []
 target_folders = ["1K", "2K", "3K", "4K", "5K", "6K", "7K", "8K", "9K", "10K", "11K", "12K", "13K", "14K", "15K", "16K"]
 
 global custom_icons
@@ -128,10 +129,8 @@ def get_mapID(self, files):
     for file in os.listdir(files):
         if file[0].isalpha():
             parts = file.split(".")[0].split("_")
-            print(f"Tohle jsou parts {parts} pro tento file {file}")
             mapID = parts[3]
             mapID_list.append(mapID)
-            # print(f"This is mapID_list for {file} : {mapID_list}")
         else:
             continue
     return mapID_list
@@ -147,14 +146,11 @@ def load_preview_image(material_name, preview_file_path):
 def print_selected_material_name(self, context):
     idx = context.window_manager.reawote_materials_index
     if idx >= 0 and idx < len(context.window_manager.reawote_materials):
-        material_name = context.window_manager.reawote_materials[idx].name
+        # material_name = context.window_manager.reawote_materials[idx].name
+        material_name = file_names[idx]
         preview_path = preview_paths[idx]
-        try:
-            res = [i for i in preview_paths if i.split('\\')[-3] == material_name]
-            print('success')
-            load_preview_image(material_name, res[0])
-        except:
-            print(f"Tento material nema preview {material_name}")
+        res = [i for i in preview_paths if len(i.split(os.path.sep)) >= 3 and i.split(os.path.sep)[-3] == material_name]
+        load_preview_image(material_name, res[0])
         if context.area:
             context.area.tag_redraw()
 
@@ -162,7 +158,6 @@ def update_material_selection(self, context):
     material_list = context.window_manager.reawote_materials
     for index, material in enumerate(material_list):
         if material == self and material.selected:
-            print(f"Checkbox for Material: {material.name}, Index: {index} has been {'checked' if material.selected else 'unchecked'}")
             full_path = valid_paths[index]
             for target_folder in os.listdir(full_path):
                 if "PREVIEW" in target_folder:
@@ -171,7 +166,6 @@ def update_material_selection(self, context):
                         if "SPHERE" in preview_file or "FABRIC" in preview_file:
                             preview_file_path = os.path.join(preview_path,preview_file)
                             load_preview_image(material.name, preview_file_path)
-                            print(f"Tohle jsou custom_icons: {custom_icons}")
                             if context.area:
                                 context.area.tag_redraw()
                             break
@@ -207,26 +201,31 @@ class ReawoteFolderBrowseOperator(bpy.types.Operator):
     def execute(self, context):
 
         folder_path = self.filepath
-        for file_name in os.listdir(folder_path):
-            full_path = os.path.join(folder_path, file_name)
-            if os.path.isdir(full_path):
-                for target_folder in os.listdir(full_path):
-                    if target_folder in target_folders:
-                        context.window_manager.selected_folder_path = self.filepath
-                        self.populate_material_list(context, self.filepath, clear_list=True)
-                        context.window_manager.is_folder_selected = True
-                        materials = context.window_manager.reawote_materials
+        try:
+            for file_name in os.listdir(folder_path):
+                full_path = os.path.join(folder_path, file_name)
+                if os.path.isdir(full_path):
+                    for target_folder in os.listdir(full_path):
+                        if target_folder in target_folders:
+                            context.window_manager.selected_folder_path = self.filepath
+                            self.populate_material_list(context, self.filepath, clear_list=True)
+                            context.window_manager.is_folder_selected = True
+                            materials = context.window_manager.reawote_materials
+                            
+                            initialize_materials(self,materials)
+
+                            context.window_manager.include_ao_maps = True
+                            context.window_manager.include_displacement_maps = True
+                            context.window_manager.use_16bit_displacement_maps = True
+                            context.window_manager.use_16bit_normal_maps = True
+                            context.window_manager.conform_maps = True
+
+                            return {'FINISHED'}
+            self.report({'WARNING'}, "Selected path doesn't contain any valid Reawote materials.")
                         
-                        initialize_materials(self,materials)
+        except NotADirectoryError:
+            self.report({'WARNING'}, "Selected path isn't a valid directory.")
 
-                        context.window_manager.include_ao_maps = True
-                        context.window_manager.include_displacement_maps = True
-                        context.window_manager.use_16bit_displacement_maps = True
-                        context.window_manager.use_16bit_normal_maps = True
-                        context.window_manager.conform_maps = True
-
-                        return {'FINISHED'}
-        self.report({'WARNING'}, "No Reawote materials were found in selected path")
         return {'CANCELLED'}
 
     def invoke(self, context, event):
@@ -236,41 +235,50 @@ class ReawoteFolderBrowseOperator(bpy.types.Operator):
     def populate_material_list(self, context, folder_path, clear_list=True):
         folder_path = context.window_manager.selected_folder_path
         material_list = context.window_manager.reawote_materials
-        added_true = False
+        added_true = False # not adding the path to true_paths list twice
+        mat_count = 0
         
         if clear_list:
             material_list.clear()
 
-        for file_name in os.listdir(folder_path):
-            full_path = os.path.join(folder_path, file_name)
+        try:
+            for file_name in os.listdir(folder_path):
+                full_path = os.path.join(folder_path, file_name)
 
-            if os.path.isdir(full_path):  # Check if it's a directory
-                # print(f"These is the content of {file_name} : {os.listdir(full_path)}")
-                
-                for target_folder in os.listdir(full_path):
-                    if target_folder in target_folders:
-                        target_folder_full_path = os.path.join(full_path, target_folder)
-                        item = material_list.add()
-                        parts = file_name.split('_')
-                        item.name = '_'.join(parts[:3])
-                        valid_paths.append(full_path)
-                        if added_true == False:
-                            true_paths.append(folder_path)
-                            added_true = True
+                if os.path.isdir(full_path):
+                    for target_folder in os.listdir(full_path):
+                        if target_folder in target_folders:
+                            target_folder_full_path = os.path.join(full_path, target_folder)
+                            item = material_list.add()
+                            parts = file_name.split('_')
+                            item.name = '_'.join(parts[:3])
+                            file_names.append(file_name)
+                            #item.name = file_name
+                            valid_paths.append(full_path)
+                            mat_count += 1
+                            if added_true == False:
+                                true_paths.append(folder_path)
+                                added_true = True
 
-                    elif "PREVIEW" in target_folder:
-                        preview_path = os.path.join(full_path, target_folder)
-                        for preview_file in os.listdir(preview_path):
-                            if "SPHERE" in preview_file or "FABRIC" in preview_file:
-                                preview_file_path = os.path.join(preview_path, preview_file)
-                                print(f"Pridavam tento preview_file: {preview_file_path}")
-                                preview_paths.append(preview_file_path)
-                                break
+                        elif "PREVIEW" in target_folder:
+                            preview_path = os.path.join(full_path, target_folder)
+                            for preview_file in os.listdir(preview_path):
+                                if "SPHERE" in preview_file or "FABRIC" in preview_file:
+                                    preview_file_path = os.path.join(preview_path, preview_file)
+                                    preview_paths.append(preview_file_path)
+                                    break
+            
+            if mat_count == 0:
+                self.report({'WARNING'}, "Selected path doesn't contain any valid Reawote materials.")
+                return {'CANCELLED'}
 
-            else:
-                print(f"{file_name} is not a directory")
-        
-        print(f"Tohle jsou preview paths: {preview_paths}")
+        except:
+            self.report({'WARNING'}, "Selected path isn't a valid directory.")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+
 
 class LoadMaterialsOperator(bpy.types.Operator):
     bl_idname = "wm.load_materials_operator"
@@ -285,20 +293,19 @@ class LoadMaterialsOperator(bpy.types.Operator):
     def execute(self, context):
         materials = context.window_manager.reawote_materials
         mapping = context.window_manager.mapping_type
+        material_selected = False
 
-        start_x, start_y = -300, 0
+        start_x, start_y = -300, 300
         offset_x, offset_y = 300, -300
         current_x, current_y = start_x, start_y
 
-        print(f"Tohle je mapping {mapping}")
-
         for index, material in enumerate(materials):
             if material.selected:
+                material_selected = True
                 current_x = start_x
                 current_y += offset_y
                 full_path = valid_paths[index]
                 paths_to_load.append(full_path)
-                print(f"Checked Material: {material.name}, Index: {index}")
                 principled_material = create_principled_bsdf_material(material.name, full_path)
                 nodes = principled_material.node_tree.nodes
                 material_node =  nodes.get('Principled BSDF')
@@ -306,6 +313,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
                 output_node = nodes.get('Material Output')
                 output_node.location = (start_x + 3*offset_x, current_y)
                 if context.object:
+
                     # # Check if the material already exists in the slots
                     # if principled_material.name not in context.object.data.materials:
                     #     context.object.data.materials.append(principled_material)
@@ -313,8 +321,8 @@ class LoadMaterialsOperator(bpy.types.Operator):
                     #     # If the material already exists, get its index
                     #     mat_index = context.object.data.materials.find(principled_material.name)
                     #     context.object.active_material_index = mat_index
+
                     context.object.data.materials.append(principled_material)
-                    # finding folder with bitmaps
                     for target_folder in os.listdir(full_path):
                         if target_folder in target_folders:
                             target_folder_full_path = os.path.join(full_path, target_folder)
@@ -330,15 +338,14 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                 principled_material.node_tree.links.new(mapping_node.inputs['Vector'], tex_coord_node.outputs['UV'])
 
                             elif mapping == "box_generated":
+                                offset_y -= 20
                                 principled_material.node_tree.links.new(mapping_node.inputs['Vector'], tex_coord_node.outputs['Generated'])
 
                             elif mapping == "box_object":
+                                offset_y -= 20
                                 principled_material.node_tree.links.new(mapping_node.inputs['Vector'], tex_coord_node.outputs['Object'])
 
                             for file in os.listdir(target_folder_full_path):
-                                print(" ")
-                                print(f"Tohle je ta moje full_path: {target_folder_full_path}")
-                                print(" ")
                                 texture_path = bpy.data.images.load(os.path.join(target_folder_full_path, file))
 
                                 mapping = bpy.context.window_manager.mapping_type
@@ -351,21 +358,13 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                 conform_maps = bpy.context.window_manager.conform_maps
                                 
                                 if conform_maps:
-                                    print(f"Conform je true a tohle je texure_path: {texture_path}")
-                                    print(f"A tohle je mapping: {mapping}")
                                     if texture_path.size[0] > 0 and texture_path.size[1] > 0:
                                         aspect_ratio = texture_path.size[0] / texture_path.size[1]
 
-                                        if mapping in ('REAWOTE_DEFAULT', 'MOSAIC_DETILING'):
-                                            print("if mapping in")
-                                            mapping_node.inputs['Scale'].default_value = (1.0 / aspect_ratio, 1.0, 1.0)
-                                        else:
-                                            if hasattr(mapping_node, 'scale'):
-                                                print("if hassattr")
+                                        if hasattr(mapping_node, 'scale'):
                                                 mapping_node.scale[0] = 1/aspect_ratio
-                                            else:
-                                                print("else")
-                                                mapping_node.inputs['Scale'].default_value[0] = 1/aspect_ratio
+                                        else:
+                                            mapping_node.inputs['Scale'].default_value[0] = 1/aspect_ratio
 
                                         # mapping_node.inputs['Scale'].default_value[0] = 1.0 / aspect_ratio
                                         # mapping_node.inputs['Scale'].default_value[1] = 1.0
@@ -375,7 +374,6 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                     product_number = parts[1]
                                     product = parts[2]
                                     mapID = parts[3]
-                                    print(f"This is mapID: {mapID}")
                                     resolution = parts[4]
 
                                     if mapID == "COL":
@@ -591,9 +589,11 @@ class LoadMaterialsOperator(bpy.types.Operator):
                                 except:
                                     pass
 
-
-        print(f"These are selected paths: {paths_to_load}")
-        self.report({'INFO'}, "Materials loaded")
+        if not material_selected:
+            self.report({'WARNING'}, "No materials were selected.")
+            return {'CANCELLED'}
+    
+        self.report({'INFO'}, "Material(s) loaded successfully.")
         return {'FINISHED'}
     
 class SelectAllOperator(bpy.types.Operator):
@@ -640,7 +640,6 @@ class RefreshOperator(bpy.types.Operator):
                             for preview_file in os.listdir(preview_path):
                                 if "SPHERE" in preview_file or "FABRIC" in preview_file:
                                     preview_file_path = os.path.join(preview_path, preview_file)
-                                    print(f"Pridavam tento preview_file: {preview_file_path}")
                                     preview_paths.append(preview_file_path)
                                     break
 
