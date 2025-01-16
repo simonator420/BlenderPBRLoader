@@ -292,16 +292,9 @@ class LoadMaterialsOperator(bpy.types.Operator):
 
     def execute(self, context):
         materials = context.window_manager.reawote_materials
-        mapping = context.window_manager.mapping_type
-        material_selected = False
-
-        start_x, start_y = -300, 300
-        offset_x, offset_y = 300, -300
 
         for index, material in enumerate(materials):
             if material.selected:
-                material_selected = True
-                current_x, current_y = start_x, start_y
                 full_path = valid_paths[index]
                 paths_to_load.append(full_path)
                 principled_material = create_principled_bsdf_material(material.name, full_path)
