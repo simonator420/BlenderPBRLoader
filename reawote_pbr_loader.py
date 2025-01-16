@@ -22,13 +22,19 @@ def register_properties():
         subtype='DIR_PATH',
         default=""
     )
+    
+    bpy.types.WindowManager.selected_hdri_path = bpy.props.StringProperty(
+        name="Folder Path",
+        subtype='DIR_PATH',
+        default=""
+    )
 
     bpy.types.WindowManager.reawote_materials_index = bpy.props.IntProperty(update=print_selected_material_name)
 
 
     bpy.types.WindowManager.mapping_type = bpy.props.EnumProperty(
         name="Mapping Type",
-        description="Mapping Type:",
+        description="Mapping Type",
         items=[
             #('REAWOTE_DEFAULT', "Reawote Default - UV", ""),
             #('MOSAIC_DETILING', "Mosaic De-tiling - UV", ""),
@@ -71,6 +77,7 @@ def register_properties():
 
 def unregister_properties():
     del bpy.types.WindowManager.selected_folder_path
+    del bpy.types.WindowManager.selected_hdri_path
     del bpy.types.WindowManager.mapping_type
     del bpy.types.WindowManager.include_ao_maps
     del bpy.types.WindowManager.include_displacement_maps
@@ -146,6 +153,7 @@ def load_preview_image(material_name, preview_file_path):
 def print_selected_material_name(self, context):
     idx = context.window_manager.reawote_materials_index
     if idx >= 0 and idx < len(context.window_manager.reawote_materials):
+        self.report({'WARNING'}, "Tak jsme tadyyyyy.")
         # material_name = context.window_manager.reawote_materials[idx].name
         material_name = file_names[idx]
         preview_path = preview_paths[idx]
@@ -163,7 +171,7 @@ def update_material_selection(self, context):
                 if "PREVIEW" in target_folder:
                     preview_path = os.path.join(full_path,target_folder)
                     for preview_file in os.listdir(preview_path):
-                        if "SPHERE" in preview_file or "FABRIC" in preview_file:
+                        if "SPHERE" in preview_file or "FABRIC" in preview_file or "PLANE" in preview_file:
                             preview_file_path = os.path.join(preview_path,preview_file)
                             load_preview_image(material.name, preview_file_path)
                             if context.area:
@@ -184,12 +192,95 @@ class ReawoteMaterialItem(bpy.types.PropertyGroup):
     selected: bpy.props.BoolProperty(name="Select", default=False, update=update_material_selection)
     preview_file_path: bpy.props.StringProperty(name="Preview File Path") 
 
-# Define a UI List
-class ReawoteMaterialUIList(bpy.types.UIList):
+
+class REAWOTE_UL_MATERIALLIST(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         row = layout.row()
         row.prop(item, "selected", text="")
         row.label(text=item.name)
+        
+class ReawoteHDRIBrowseOperator(bpy.types.Operator):
+    bl_idname = "material.reawote_hdri_browse_operator"
+    bl_label = "Browse HDRI Folder"
+    bl_description = "Select the HDRI folder"
+    
+    filepath: bpy.props.StringProperty(subtype="DIR_PATH")
+    
+    def execute(self, context):
+        folder_path = self.filepath
+        if not folder_path or not os.path.exists(folder_path):
+            self.report({'WARNING'}, "No valid HDRI folder selected.")
+            return {'CANCELLED'}
+        try:
+            for file_name in os.listdir(folder_path):
+                full_path = os.path.join(folder_path, file_name)
+                if os.path.isdir(full_path):
+                    for target_folder in os.listdir(full_path):
+                        if target_folder in target_folders:
+                            context.window_manager.selected_hdri_path = self.filepath
+                            self.populate_hdri_list(context, self.filepath, clear_list=True)
+                            context.window_manager.is_folder_selected = True
+                            
+                            hdris = context.window_manager.reawote_materials
+                            
+                            initialize_materials(self,hdris)
+                            
+                            return {'FINISHED'}
+            
+            self.report({'WARNING'}, "Selected path doesn't contain any valid Reawote HDRIs.")
+                            
+        except NotADirectoryError:
+            self.report({'WARNING'}, "Selected path doesn't contain any valid Reawote HDRIs.")
+        
+        return {'CANCELLED'}
+    
+    def invoke(self, context, event):
+        print("Invoking HDRI folder selector...")
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+        
+    def populate_hdri_list(self, context, folder_path, clear_list=True):
+        folder_path = context.window_manager.selected_hdri_path
+        hdri_list = context.window_manager.reawote_materials
+        added_true = False
+        hdri_count = 0
+        
+        if clear_list:
+            hdri_list.clear()
+        
+        try:
+            for file_name in os.listdir(folder_path):
+                full_path = os.path.join(folder_path, file_name)
+                
+                if os.path.isdir(full_path):
+                    for target_folder in os.listdir(full_path):
+                        if target_folder in target_folders:
+                            target_folder_full_path = os.path.join(full_path, target_folder)
+                            item = hdri_list.add()
+                            parts = file_name.split('_')
+                            item.name = '_'.join(parts[:3])
+                            file_names.append(file_name)
+                            valid_paths.append(full_path)
+                            hdri_count += 1
+                            if added_true == False:
+                                true_paths.append(folder_path)
+                                added_true = True
+                                
+                        elif "PREVIEW" in target_folder:
+                            preview_path = os.path.join(full_path, target_folder)
+                            for preview_file in os.listdir(preview_path):
+                                if "PLANE" in preview_file:
+                                    preview_file_path = os.path.join(preview_path, preview_file)
+                                    preview_paths.append(preview_file_path)
+                                    
+                                    # load_preview_image(item.name, preview_file_path)
+                                    break
+        except:
+            self.report({'WARNING'}, "Selected path isn't a valid directory.")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+            
     
 class ReawoteFolderBrowseOperator(bpy.types.Operator):
     bl_idname = "material.reawote_folder_browse_operator"
@@ -283,7 +374,7 @@ class ReawoteFolderBrowseOperator(bpy.types.Operator):
 class LoadMaterialsOperator(bpy.types.Operator):
     bl_idname = "wm.load_materials_operator"
     bl_label = "Load Material(s)"
-    bl_description = "Load selected materials from the list view"
+    bl_description = "Load selected materials from the list"
 
     def set_projection(self, mapping, node):
         if mapping in ('box_generated', 'box_object'):
@@ -292,9 +383,16 @@ class LoadMaterialsOperator(bpy.types.Operator):
 
     def execute(self, context):
         materials = context.window_manager.reawote_materials
+        mapping = context.window_manager.mapping_type
+        material_selected = False
+
+        start_x, start_y = -300, 300
+        offset_x, offset_y = 300, -300
 
         for index, material in enumerate(materials):
             if material.selected:
+                material_selected = True
+                current_x, current_y = start_x, start_y
                 full_path = valid_paths[index]
                 paths_to_load.append(full_path)
                 principled_material = create_principled_bsdf_material(material.name, full_path)
@@ -304,14 +402,6 @@ class LoadMaterialsOperator(bpy.types.Operator):
                 output_node = nodes.get('Material Output')
                 output_node.location = (start_x + 3*offset_x, current_y)
                 if context.object:
-
-                    # # Check if the material already exists in the slots
-                    # if principled_material.name not in context.object.data.materials:
-                    #     context.object.data.materials.append(principled_material)
-                    # else:
-                    #     # If the material already exists, get its index
-                    #     mat_index = context.object.data.materials.find(principled_material.name)
-                    #     context.object.active_material_index = mat_index
 
                     context.object.data.materials.append(principled_material)
                     for target_folder in os.listdir(full_path):
@@ -589,7 +679,7 @@ class LoadMaterialsOperator(bpy.types.Operator):
     
 class ApplyMaterialOperator(bpy.types.Operator):
     bl_idname = "wm.apply_material_operator"
-    bl_label = "Apply Material To Selection"
+    bl_label = "Apply Material On Selection"
     bl_description = "Apply material on selected object"
     
     def execute(self, context):
@@ -616,18 +706,16 @@ class ApplyMaterialOperator(bpy.types.Operator):
             return {'CANCELLED'}
         
         for i, material in enumerate(obj.data.materials):
-            print(f"Tohle je material: {material}")
-            print(f"Tohle je selected_mat.name: {selected_mat.name}")
-            print(f"Tohle je material.name: {material.name}")
             if selected_mat.name == material.name:
 
                 first_material = obj.data.materials[0]
                 obj.data.materials[0] = material
                 obj.data.materials[i] = first_material
                 obj.data.update()
+                self.report({'INFO'}, material.name + " has been applied.")
                 return {'FINISHED'}
         
-        self.report({'WARNING'}, "Material is not loaded. First load material you wish to apply with Load Material(s) button.")
+        self.report({'WARNING'}, "The material hasn't been loaded. Please load the material you wish to apply by using the 'Load Material(s)' button first.")        
         return {'CANCELLED'}
     
 class SelectAllOperator(bpy.types.Operator):
@@ -689,9 +777,11 @@ class AddToQueueOperator(bpy.types.Operator):
     filepath: bpy.props.StringProperty(subtype="DIR_PATH")
 
     def execute(self, context):
+        materials = context.window_manager.reawote_materials
         if self.filepath:
             context.window_manager.selected_folder_path = self.filepath
             ReawoteFolderBrowseOperator.populate_material_list(self, context=context, folder_path=self.filepath, clear_list=False)
+            initialize_materials(self, materials)
         return {'FINISHED'}
     
     def invoke(self, context, event):
@@ -741,11 +831,19 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
         else:
             split.operator(ReawoteFolderBrowseOperator.bl_idname, text="Browse")
         
+        split = layout.split(factor=0.4)
+        split.label(text="HDRI folder:")
+        
+        if wm.selected_hdri_path:
+            split.label(text=wm.selected_hdri_path)
+        else:
+            split.operator(ReawoteHDRIBrowseOperator.bl_idname, text="Browse")
+        
         props_enabled = wm.is_folder_selected
 
         sub_layout = layout.column()
         sub_layout.enabled = props_enabled
-
+            
         split = sub_layout.split(factor=0.4)
         split.label(text="Import mapping as:")
         split.prop(wm, "mapping_type", text="")
@@ -759,7 +857,7 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
 
         sub_layout.operator("wm.load_materials_operator", text="Load Material(s)")
 
-        sub_layout.operator("wm.apply_material_operator", text="Apply Material To Selected Object")
+        sub_layout.operator("wm.apply_material_operator", text="Apply Material On Selected Object")
 
         button_row = layout.row(align=False)
         button_row.enabled = wm.is_folder_selected
@@ -768,7 +866,7 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
         button_row.operator("wm.add_to_queue_operator", text="Add To Queue")
         button_row.operator("wm.clean_operator", text="Clean")
 
-        layout.template_list("ReawoteMaterialUIList", "", wm, "reawote_materials", wm, "reawote_materials_index")
+        layout.template_list("REAWOTE_UL_MATERIALLIST", "", wm, "reawote_materials", wm, "reawote_materials_index")
         
         # row = layout.row(align=False)
         # thumbnail_size = 6 if bpy.app.version >= (2, 80) else 5
@@ -793,6 +891,7 @@ def register():
 
     bpy.utils.register_class(ReawotePBRLoaderPanel)
     bpy.utils.register_class(ReawoteFolderBrowseOperator)
+    bpy.utils.register_class(ReawoteHDRIBrowseOperator)
     bpy.utils.register_class(SelectAllOperator)
     bpy.utils.register_class(RefreshOperator)
     bpy.utils.register_class(AddToQueueOperator)
@@ -800,7 +899,7 @@ def register():
     bpy.utils.register_class(LoadMaterialsOperator)
     bpy.utils.register_class(ApplyMaterialOperator)
     bpy.utils.register_class(ReawoteMaterialItem)
-    bpy.utils.register_class(ReawoteMaterialUIList)
+    bpy.utils.register_class(REAWOTE_UL_MATERIALLIST)
     bpy.types.WindowManager.reawote_materials = bpy.props.CollectionProperty(type=ReawoteMaterialItem)
     bpy.types.WindowManager.reawote_materials_index = bpy.props.IntProperty()
     register_properties()
@@ -811,6 +910,7 @@ def unregister():
     custom_icons = None
     bpy.utils.unregister_class(ReawotePBRLoaderPanel)
     bpy.utils.unregister_class(ReawoteFolderBrowseOperator)
+    bpy.utils.unregister_class(ReawoteHDRIBrowseOperator)
     bpy.utils.unregister_class(SelectAllOperator)
     bpy.utils.unregister_class(RefreshOperator)
     bpy.utils.unregister_class(AddToQueueOperator)
@@ -818,7 +918,7 @@ def unregister():
     bpy.utils.unregister_class(LoadMaterialsOperator)
     bpy.utils.unregister_class(ApplyMaterialOperator)
     bpy.utils.unregister_class(ReawoteMaterialItem)
-    bpy.utils.unregister_class(ReawoteMaterialUIList)
+    bpy.utils.unregister_class(REAWOTE_UL_MATERIALLIST)
     del bpy.types.WindowManager.reawote_materials
     del bpy.types.WindowManager.reawote_materials_index
     unregister_properties()

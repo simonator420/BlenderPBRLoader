@@ -1,6 +1,7 @@
 #  information about the add-on
 bl_info = {
     "name": "Reawote PBR Loader",
+    "description": "Loads PBR materials from Reawote library into Blender.",
     "blender": (2, 80, 0),
     "category": "Material"
 }
@@ -16,7 +17,6 @@ def register():
 
 # disable the add-on
 def unregister():
-    reawote_dialog.register()
     reawote_pbr_loader.register()
 
 if __name__ == "__main__":
