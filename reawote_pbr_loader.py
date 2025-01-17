@@ -73,6 +73,11 @@ def register_properties():
         name="Is Folder Selected",
         default=False
     )
+    
+    bpy.types.WindowManager.is_hdri_selected = bpy.props.BoolProperty(
+        name="Is HDRI Selected",
+        default=False
+    )
 
 
 def unregister_properties():
@@ -85,6 +90,7 @@ def unregister_properties():
     del bpy.types.WindowManager.use_16bit_normal_maps
     del bpy.types.WindowManager.conform_maps
     del bpy.types.WindowManager.is_folder_selected
+    del bpy.types.WindowManager.is_hdri_selected
 
 # creates a basic material with nodes
 def create_basic_material():
@@ -219,7 +225,7 @@ class ReawoteHDRIBrowseOperator(bpy.types.Operator):
                         if target_folder in target_folders:
                             context.window_manager.selected_hdri_path = self.filepath
                             self.populate_hdri_list(context, self.filepath, clear_list=True)
-                            context.window_manager.is_folder_selected = True
+                            context.window_manager.is_hdri_selected = True
                             
                             hdris = context.window_manager.reawote_materials
                             
@@ -256,15 +262,17 @@ class ReawoteHDRIBrowseOperator(bpy.types.Operator):
                     for target_folder in os.listdir(full_path):
                         if target_folder in target_folders:
                             target_folder_full_path = os.path.join(full_path, target_folder)
-                            item = hdri_list.add()
-                            parts = file_name.split('_')
-                            item.name = '_'.join(parts[:3])
-                            file_names.append(file_name)
-                            valid_paths.append(full_path)
-                            hdri_count += 1
-                            if added_true == False:
-                                true_paths.append(folder_path)
-                                added_true = True
+                            # Check for .hdr files in the target folder
+                            if any(f.lower().endswith('.hdr') for f in os.listdir(target_folder_full_path)):
+                                item = hdri_list.add()
+                                parts = file_name.split('_')
+                                item.name = '_'.join(parts[:3])
+                                file_names.append(file_name)
+                                valid_paths.append(full_path)
+                                hdri_count += 1
+                                if not added_true:
+                                    true_paths.append(folder_path)
+                                    added_true = True
                                 
                         elif "PREVIEW" in target_folder:
                             preview_path = os.path.join(full_path, target_folder)
@@ -278,7 +286,10 @@ class ReawoteHDRIBrowseOperator(bpy.types.Operator):
         except:
             self.report({'WARNING'}, "Selected path isn't a valid directory.")
             return {'CANCELLED'}
-
+        
+        self.report({'WARNING'}, f"Tohle jsou valid_paths {valid_paths}.")
+        self.report({'WARNING'}, f"Tohle jsou true_paths {true_paths}.")
+        self.report({'WARNING'}, f"Tohle jsou preview_paths {preview_paths}.")
         return {'FINISHED'}
             
     
@@ -340,16 +351,17 @@ class ReawoteFolderBrowseOperator(bpy.types.Operator):
                     for target_folder in os.listdir(full_path):
                         if target_folder in target_folders:
                             target_folder_full_path = os.path.join(full_path, target_folder)
-                            item = material_list.add()
-                            parts = file_name.split('_')
-                            item.name = '_'.join(parts[:3])
-                            file_names.append(file_name)
-                            #item.name = file_name
-                            valid_paths.append(full_path)
-                            mat_count += 1
-                            if added_true == False:
-                                true_paths.append(folder_path)
-                                added_true = True
+                            # Skip folders with .hdr files
+                            if not any(f.lower().endswith('.hdr') for f in os.listdir(target_folder_full_path)):
+                                item = material_list.add()
+                                parts = file_name.split('_')
+                                item.name = '_'.join(parts[:3])
+                                file_names.append(file_name)
+                                valid_paths.append(full_path)
+                                mat_count += 1
+                                if not added_true:
+                                    true_paths.append(folder_path)
+                                    added_true = True
 
                         elif "PREVIEW" in target_folder:
                             preview_path = os.path.join(full_path, target_folder)
@@ -367,6 +379,9 @@ class ReawoteFolderBrowseOperator(bpy.types.Operator):
             self.report({'WARNING'}, "Selected path isn't a valid directory.")
             return {'CANCELLED'}
 
+        self.report({'WARNING'}, f"Tohle jsou valid_paths {valid_paths}.")
+        self.report({'WARNING'}, f"Tohle jsou true_paths {true_paths}.")
+        self.report({'WARNING'}, f"Tohle jsou preview_paths {preview_paths}.")
         return {'FINISHED'}
 
 
@@ -744,28 +759,64 @@ class RefreshOperator(bpy.types.Operator):
         material_list.clear()
         valid_paths.clear()
         preview_paths.clear()
-        for true_path in true_paths:
+        
+        if context.window_manager.is_hdri_selected:
+            # Process HDRI files
+            for true_path in true_paths:
+                for file_name in os.listdir(true_path):
+                    full_path = os.path.join(true_path, file_name)
+                    
+                    if os.path.isdir(full_path):
+                        for target_folder in os.listdir(full_path):
+                            if target_folder in target_folders:
+                                target_folder_full_path = os.path.join(full_path, target_folder)
+                                
+                                # Check for HDRI files
+                                if any(f.lower().endswith('.hdr') for f in os.listdir(target_folder_full_path)):
+                                    item = material_list.add()
+                                    parts = file_name.split('_')
+                                    item.name = '_'.join(parts[:3])
+                                    valid_paths.append(full_path)
+                                
+                                elif "PREVIEW" in target_folder:
+                                    preview_path = os.path.join(full_path, target_folder)
+                                    for preview_file in os.listdir(preview_path):
+                                        if "PLANE" in preview_file:
+                                            preview_file_path = os.path.join(preview_path, preview_file)
+                                            preview_paths.append(preview_file_path)
+                                            break
+                                        
+        elif context.window_manager.is_folder_selected:
+            # Process material files
+            for true_path in true_paths:
+                for file_name in os.listdir(true_path):
+                    full_path = os.path.join(true_path, file_name)
 
-            for file_name in os.listdir(true_path):
-                full_path = os.path.join(true_path, file_name)
+                    if os.path.isdir(full_path):
+                        for target_folder in os.listdir(full_path):
+                            if target_folder in target_folders:
+                                target_folder_full_path = os.path.join(full_path, target_folder)
 
-                if os.path.isdir(full_path):
-                    for target_folder in os.listdir(full_path):
-                        if target_folder in target_folders:
-                            target_folder_full_path = os.path.join(full_path, target_folder)
-                            item = material_list.add()
-                            item.name = file_name
-                            valid_paths.append(full_path)
-                        
-                        elif "PREVIEW" in target_folder:
-                            preview_path = os.path.join(full_path, target_folder)
-                            for preview_file in os.listdir(preview_path):
-                                if "SPHERE" in preview_file or "FABRIC" in preview_file:
-                                    preview_file_path = os.path.join(preview_path, preview_file)
-                                    preview_paths.append(preview_file_path)
-                                    break
+                                # Skip folders with .hdr files
+                                if not any(f.lower().endswith('.hdr') for f in os.listdir(target_folder_full_path)):
+                                    item = material_list.add()
+                                    parts = file_name.split('_')
+                                    item.name = '_'.join(parts[:3])
+                                    valid_paths.append(full_path)
+                                
+                                elif "PREVIEW" in target_folder:
+                                    preview_path = os.path.join(full_path, target_folder)
+                                    for preview_file in os.listdir(preview_path):
+                                        if "SPHERE" in preview_file or "FABRIC" in preview_file:
+                                            preview_file_path = os.path.join(preview_path, preview_file)
+                                            preview_paths.append(preview_file_path)
+                                            break
 
-                    initialize_materials(self,material_list)
+        else:
+            self.report({'WARNING'}, "No valid selection detected.")
+            return {'CANCELLED'}
+
+        initialize_materials(self, material_list)
 
         return {'FINISHED'}
 
@@ -801,7 +852,9 @@ class CleanOperator(bpy.types.Operator):
         preview_paths.clear()
 
         context.window_manager.selected_folder_path = ""
+        context.window_manager.selected_hdri_path = ""
         context.window_manager.is_folder_selected = False
+        context.window_manager.is_hdri_selected = False
 
         context.window_manager.include_ao_maps = False
         context.window_manager.include_displacement_maps = False
@@ -829,7 +882,10 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
         if wm.selected_folder_path:
             split.label(text=wm.selected_folder_path)
         else:
-            split.operator(ReawoteFolderBrowseOperator.bl_idname, text="Browse")
+            # Wrap the operator in a row to conditionally disable it
+            row = split.row()
+            row.enabled = not wm.get("is_hdri_selected", False)  # Disable if HDRI is selected
+            row.operator(ReawoteFolderBrowseOperator.bl_idname, text="Browse")
         
         split = layout.split(factor=0.4)
         split.label(text="HDRI folder:")
@@ -837,7 +893,9 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
         if wm.selected_hdri_path:
             split.label(text=wm.selected_hdri_path)
         else:
-            split.operator(ReawoteHDRIBrowseOperator.bl_idname, text="Browse")
+            row = split.row()
+            row.enabled = not wm.get("is_folder_selected", False)
+            row.operator(ReawoteHDRIBrowseOperator.bl_idname, text="Browse")
         
         props_enabled = wm.is_folder_selected
 
@@ -860,7 +918,7 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
         sub_layout.operator("wm.apply_material_operator", text="Apply Material On Selected Object")
 
         button_row = layout.row(align=False)
-        button_row.enabled = wm.is_folder_selected
+        button_row.enabled = wm.is_folder_selected or wm.is_hdri_selected
         button_row.operator("wm.select_all_operator", text="Select All")
         button_row.operator("wm.refresh_operator", text="Refresh")
         button_row.operator("wm.add_to_queue_operator", text="Add To Queue")
