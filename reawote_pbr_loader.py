@@ -225,7 +225,6 @@ class ReawoteHDRIBrowseOperator(bpy.types.Operator):
                         if target_folder in target_folders:
                             context.window_manager.selected_hdri_path = self.filepath
                             self.populate_hdri_list(context, self.filepath, clear_list=True)
-                            context.window_manager.is_hdri_selected = True
                             
                             hdris = context.window_manager.reawote_materials
                             
@@ -264,6 +263,7 @@ class ReawoteHDRIBrowseOperator(bpy.types.Operator):
                             target_folder_full_path = os.path.join(full_path, target_folder)
                             # Check for .hdr files in the target folder
                             if any(f.lower().endswith('.hdr') for f in os.listdir(target_folder_full_path)):
+                                context.window_manager.is_hdri_selected = True
                                 item = hdri_list.add()
                                 parts = file_name.split('_')
                                 item.name = '_'.join(parts[:3])
@@ -274,7 +274,7 @@ class ReawoteHDRIBrowseOperator(bpy.types.Operator):
                                     true_paths.append(folder_path)
                                     added_true = True
                                 
-                        elif "PREVIEW" in target_folder:
+                        elif "PREVIEW" in target_folder and context.window_manager.is_hdri_selected:
                             preview_path = os.path.join(full_path, target_folder)
                             for preview_file in os.listdir(preview_path):
                                 if "PLANE" in preview_file:
@@ -384,7 +384,35 @@ class ReawoteFolderBrowseOperator(bpy.types.Operator):
         self.report({'WARNING'}, f"Tohle jsou preview_paths {preview_paths}.")
         return {'FINISHED'}
 
+class LoadHDRIOperator(bpy.types.Operator):
+    bl_idname = "wm.load_hdri_operator"
+    bl_label = "Load HDRI"
+    bl_description = "Load selected HDRI from the list"
+    
+    def execute(self, context):
+        hdris = context.window_manager.reawote_materials
+        mapping = context.window_manager.mapping_type
+        hdri_selected = False
+        
+        for index, hdri in enumerate(hdris):
+            if hdri.selected:
+                material_selected = True
+                full_path = valid_paths[index]
+                paths_to_load.append(full_path)
+                
+                world = bpy.context.scene.world
+                if not world:
+                    world = bpy.data.worlds.new("World")
+                    bpy.context.scene.world = world
 
+                world.use_nodes = True
+                nodes = world.node_tree.nodes
+                links = world.node_tree.links
+                
+                background_node = nodes.new(type="ShaderNodeBackground")
+                background_node.location = (0, 0)
+        
+        return {'FINISHED'}
 
 class LoadMaterialsOperator(bpy.types.Operator):
     bl_idname = "wm.load_materials_operator"
@@ -903,7 +931,7 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
         split = layout.split(factor=0.4)
         split.label(text="HDRI folder:")
         
-        if wm.selected_hdri_path:
+        if wm.is_hdri_selected:
             split.label(text=wm.selected_hdri_path)
         else:
             row = split.row()
@@ -926,7 +954,15 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
         sub_layout.prop(wm, "use_16bit_normal_maps")
         sub_layout.prop(wm, "conform_maps")
 
-        sub_layout.operator("wm.load_materials_operator", text="Load Material(s)")
+        # Load Material(s) button
+        load_materials_row = layout.row()
+        load_materials_row.enabled = wm.is_folder_selected  # Enable only if a material folder is selected
+        load_materials_row.operator("wm.load_materials_operator", text="Load Material(s)")
+        
+        # Load HDRI button
+        load_hdri_row = layout.row()
+        load_hdri_row.enabled = wm.is_hdri_selected # Enable only if an HDRI folder is selected
+        load_hdri_row.operator("wm.load_hdri_operator", text="Load HDRI")
 
         sub_layout.operator("wm.apply_material_operator", text="Apply Material On Selected Object")
 
@@ -968,6 +1004,7 @@ def register():
     bpy.utils.register_class(AddToQueueOperator)
     bpy.utils.register_class(CleanOperator)
     bpy.utils.register_class(LoadMaterialsOperator)
+    bpy.utils.register_class(LoadHDRIOperator)
     bpy.utils.register_class(ApplyMaterialOperator)
     bpy.utils.register_class(ReawoteMaterialItem)
     bpy.utils.register_class(REAWOTE_UL_MATERIALLIST)
@@ -987,6 +1024,7 @@ def unregister():
     bpy.utils.unregister_class(AddToQueueOperator)
     bpy.utils.unregister_class(CleanOperator)
     bpy.utils.unregister_class(LoadMaterialsOperator)
+    bpy.utils.unregister_class(LoadHDRIOperator)
     bpy.utils.unregister_class(ApplyMaterialOperator)
     bpy.utils.unregister_class(ReawoteMaterialItem)
     bpy.utils.unregister_class(REAWOTE_UL_MATERIALLIST)
