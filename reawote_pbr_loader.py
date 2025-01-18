@@ -239,7 +239,6 @@ class ReawoteHDRIBrowseOperator(bpy.types.Operator):
         return {'CANCELLED'}
     
     def invoke(self, context, event):
-        print("Invoking HDRI folder selector...")
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
         
