@@ -396,28 +396,78 @@ class LoadHDRIOperator(bpy.types.Operator):
     
     def execute(self, context):
         hdris = context.window_manager.reawote_materials
-        mapping = context.window_manager.mapping_type
         hdri_selected = False
         
+        selected_hdris = [hdri for hdri in hdris if hdri.selected]
+
+        # Check if more than one HDRI is selected
+        if len(selected_hdris) > 1:
+            self.report({'WARNING'}, "Only one HDRI can be selected. Please select only one.")
+            return {'CANCELLED'}
+
+        if len(selected_hdris) == 0:
+            self.report({'WARNING'}, "No HDRI selected. Please select an HDRI from the list.")
+            return {'CANCELLED'}
+
         for index, hdri in enumerate(hdris):
             if hdri.selected:
-                material_selected = True
+                hdri_selected = True
                 full_path = valid_paths[index]
-                paths_to_load.append(full_path)
                 
+                self.report({'WARNING'}, f"Tohle je full_path: {full_path}")
+                
+                # Find .hdr file in the directory and subdirectories
+                hdri_file = None
+                for root, _, files in os.walk(full_path):
+                    for file_name in files:
+                        if file_name.endswith(".hdr"):
+                            hdri_file = os.path.join(root, file_name)
+                            self.report({'WARNING'}, f"Tohle je hdri_file: {hdri_file}")
+                            break
+                    if hdri_file:
+                        break
+                                
+                # Load HDRI in Blender's World settings
                 world = bpy.context.scene.world
                 if not world:
                     world = bpy.data.worlds.new("World")
                     bpy.context.scene.world = world
+                
+                # Enable use_nodes if not already enabled
+                if not world.use_nodes:
+                    world.use_nodes = True
 
-                world.use_nodes = True
+                # Get node tree and nodes
                 nodes = world.node_tree.nodes
                 links = world.node_tree.links
-                
+
+                # Clear existing nodes
+                for node in nodes:
+                    nodes.remove(node)
+
+                # Create necessary nodes
+                output_node = nodes.new(type="ShaderNodeOutputWorld")
+                output_node.location = (200, 0)
+
                 background_node = nodes.new(type="ShaderNodeBackground")
                 background_node.location = (0, 0)
-        
-        return {'FINISHED'}
+
+                environment_texture_node = nodes.new(type="ShaderNodeTexEnvironment")
+                environment_texture_node.location = (-300, 0)
+
+                # Load HDRI file into the Environment Texture node
+                try:
+                    environment_texture_node.image = bpy.data.images.load(hdri_file)
+                except Exception as e:
+                    self.report({'WARNING'}, f"Failed to load HDRI: {e}")
+                    return {'CANCELLED'}
+
+                # Connect the nodes
+                links.new(environment_texture_node.outputs['Color'], background_node.inputs['Color'])
+                links.new(background_node.outputs['Background'], output_node.inputs['Surface'])
+
+                self.report({'INFO'}, f"HDRI loaded: {hdri.name}")
+                return {'FINISHED'}
 
 class LoadMaterialsOperator(bpy.types.Operator):
     bl_idname = "wm.load_materials_operator"
