@@ -159,7 +159,6 @@ def load_preview_image(material_name, preview_file_path):
 def print_selected_material_name(self, context):
     idx = context.window_manager.reawote_materials_index
     if idx >= 0 and idx < len(context.window_manager.reawote_materials):
-        self.report({'WARNING'}, "Tak jsme tadyyyyy.")
         # material_name = context.window_manager.reawote_materials[idx].name
         material_name = file_names[idx]
         preview_path = preview_paths[idx]
@@ -235,7 +234,7 @@ class ReawoteHDRIBrowseOperator(bpy.types.Operator):
             self.report({'WARNING'}, "Selected path doesn't contain any valid Reawote HDRIs.")
                             
         except NotADirectoryError:
-            self.report({'WARNING'}, "Selected path doesn't contain any valid Reawote HDRIs.")
+            self.report({'WARNING'}, "Selected path isn't a valid directory.")
         
         return {'CANCELLED'}
     
@@ -283,13 +282,15 @@ class ReawoteHDRIBrowseOperator(bpy.types.Operator):
                                     
                                     # load_preview_image(item.name, preview_file_path)
                                     break
+            
+            if hdri_count == 0:
+                self.report({'WARNING'}, "Selected path doesn't contain any valid Reawote HDRI.")
+                return {'CANCELLED'}
+            
         except:
             self.report({'WARNING'}, "Selected path isn't a valid directory.")
             return {'CANCELLED'}
         
-        self.report({'WARNING'}, f"Tohle jsou valid_paths {valid_paths}.")
-        self.report({'WARNING'}, f"Tohle jsou true_paths {true_paths}.")
-        self.report({'WARNING'}, f"Tohle jsou preview_paths {preview_paths}.")
         return {'FINISHED'}
             
     
@@ -303,6 +304,9 @@ class ReawoteFolderBrowseOperator(bpy.types.Operator):
     def execute(self, context):
 
         folder_path = self.filepath
+        if not folder_path or not os.path.exists(folder_path):
+            self.report({'WARNING'}, "No valid material folder selected.")
+            return {'CANCELLED'}
         try:
             for file_name in os.listdir(folder_path):
                 full_path = os.path.join(folder_path, file_name)
@@ -311,18 +315,13 @@ class ReawoteFolderBrowseOperator(bpy.types.Operator):
                         if target_folder in target_folders:
                             context.window_manager.selected_folder_path = self.filepath
                             self.populate_material_list(context, self.filepath, clear_list=True)
-                            context.window_manager.is_folder_selected = True
+                            
                             materials = context.window_manager.reawote_materials
                             
                             initialize_materials(self,materials)
 
-                            context.window_manager.include_ao_maps = True
-                            context.window_manager.include_displacement_maps = True
-                            context.window_manager.use_16bit_displacement_maps = True
-                            context.window_manager.use_16bit_normal_maps = True
-                            context.window_manager.conform_maps = True
-
                             return {'FINISHED'}
+                        
             self.report({'WARNING'}, "Selected path doesn't contain any valid Reawote materials.")
                         
         except NotADirectoryError:
@@ -353,12 +352,21 @@ class ReawoteFolderBrowseOperator(bpy.types.Operator):
                             target_folder_full_path = os.path.join(full_path, target_folder)
                             # Skip folders with .hdr files
                             if not any(f.lower().endswith('.hdr') for f in os.listdir(target_folder_full_path)):
+                                context.window_manager.is_folder_selected = True
+                                
                                 item = material_list.add()
                                 parts = file_name.split('_')
                                 item.name = '_'.join(parts[:3])
                                 file_names.append(file_name)
                                 valid_paths.append(full_path)
                                 mat_count += 1
+                                
+                                context.window_manager.include_ao_maps = True
+                                context.window_manager.include_displacement_maps = True
+                                context.window_manager.use_16bit_displacement_maps = True
+                                context.window_manager.use_16bit_normal_maps = True
+                                context.window_manager.conform_maps = True
+                                
                                 if not added_true:
                                     true_paths.append(folder_path)
                                     added_true = True
@@ -379,9 +387,6 @@ class ReawoteFolderBrowseOperator(bpy.types.Operator):
             self.report({'WARNING'}, "Selected path isn't a valid directory.")
             return {'CANCELLED'}
 
-        self.report({'WARNING'}, f"Tohle jsou valid_paths {valid_paths}.")
-        self.report({'WARNING'}, f"Tohle jsou true_paths {true_paths}.")
-        self.report({'WARNING'}, f"Tohle jsou preview_paths {preview_paths}.")
         return {'FINISHED'}
 
 class LoadHDRIOperator(bpy.types.Operator):
@@ -920,7 +925,7 @@ class ReawotePBRLoaderPanel(bpy.types.Panel):
         split = layout.split(factor=0.4)
         split.label(text="Material folder:")
 
-        if wm.selected_folder_path:
+        if wm.is_folder_selected:
             split.label(text=wm.selected_folder_path)
         else:
             # Wrap the operator in a row to conditionally disable it
