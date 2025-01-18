@@ -829,11 +829,24 @@ class AddToQueueOperator(bpy.types.Operator):
 
     def execute(self, context):
         materials = context.window_manager.reawote_materials
-        if self.filepath:
+        
+        if context.window_manager.is_hdri_selected:
+            context.window_manager.selected_hdri_path = self.filepath
+            ReawoteHDRIBrowseOperator.populate_hdri_list(self, context=context, folder_path=self.filepath, clear_list=False)
+            initialize_materials(self, materials)
+            
+        elif context.window_manager.is_folder_selected:
             context.window_manager.selected_folder_path = self.filepath
             ReawoteFolderBrowseOperator.populate_material_list(self, context=context, folder_path=self.filepath, clear_list=False)
             initialize_materials(self, materials)
+        
         return {'FINISHED'}
+        
+        # if self.filepath:
+        #     context.window_manager.selected_folder_path = self.filepath
+        #     ReawoteFolderBrowseOperator.populate_material_list(self, context=context, folder_path=self.filepath, clear_list=False)
+        #     initialize_materials(self, materials)
+        # return {'FINISHED'}
     
     def invoke(self, context, event):
         context.window_manager.fileselect_add(self)
